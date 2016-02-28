@@ -323,7 +323,7 @@ ngx_rtmp_bandwidth_detection_start(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h, 
     bw_ctx->bytes_out = s->out_bytes;
 
     // Send first packet with empty payload - for latency calculation
-    return ngx_rtmp_send_bwcheck(s, NULL);
+    return ngx_rtmp_send_bwcheck(s, NULL, 0);
 }
 
 
@@ -389,7 +389,7 @@ ngx_rtmp_bandwidth_detection_check_result(ngx_rtmp_session_t *s)
 
         bw_ctx->pkt_sent ++;
         bw_ctx->cum_latency ++;
-        return ngx_rtmp_send_bwcheck(s, payload);
+        return ngx_rtmp_send_bwcheck(s, payload, NGX_RTMP_BANDWIDTH_DETECTION_PAYLOAD_LENGTH);
 
     } else if (bw_ctx->pkt_received == bw_ctx->pkt_sent) {
 
@@ -422,7 +422,7 @@ ngx_rtmp_bandwidth_detection_check_result(ngx_rtmp_session_t *s)
 
     if (bw_ctx->pkt_sent == 1 && bw_ctx->pkt_received == 1) {
         // First call
-        return ngx_rtmp_send_bwcheck(s, payload);
+        return ngx_rtmp_send_bwcheck(s, payload, NGX_RTMP_BANDWIDTH_DETECTION_PAYLOAD_LENGTH);
     }
 
     return NGX_OK;

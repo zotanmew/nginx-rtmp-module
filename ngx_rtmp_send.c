@@ -990,7 +990,7 @@ ngx_rtmp_send_sample_access(ngx_rtmp_session_t *s)
 /* -------------------------------------- For bandwidth detection ---------------------------------- */
 
 ngx_chain_t *
-ngx_rtmp_create_bwcheck(ngx_rtmp_session_t *s, u_char *payload)
+ngx_rtmp_create_bwcheck(ngx_rtmp_session_t *s, u_char *payload, size_t plength)
 {
     ngx_rtmp_header_t               h;
 
@@ -1041,10 +1041,10 @@ ngx_rtmp_create_bwcheck(ngx_rtmp_session_t *s, u_char *payload)
 }
 
 ngx_int_t
-ngx_rtmp_send_bwcheck(ngx_rtmp_session_t *s, u_char *payload)
+ngx_rtmp_send_bwcheck(ngx_rtmp_session_t *s, u_char *payload, size_t plength)
 {
     return ngx_rtmp_send_shared_packet(s,
-           ngx_rtmp_create_bwcheck(s, payload));
+           ngx_rtmp_create_bwcheck(s, payload, plength));
 }
 
 
