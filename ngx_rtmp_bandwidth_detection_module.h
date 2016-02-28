@@ -23,7 +23,9 @@ typedef struct ngx_rtmp_bandwidth_detection_ctx_s ngx_rtmp_bandwidth_detection_c
 struct ngx_rtmp_bandwidth_detection_ctx_s {
     ngx_rtmp_session_t                 *session;
     uint64_t                            bytes_out;
+    uint64_t                            bytes_out2;
     ngx_msec_t                          bw_begin_time;
+    ngx_msec_t                          bw_begin_time2;
     ngx_uint_t                          pkt_sent;
     ngx_uint_t                          pkt_received;
     ngx_msec_t                          pkt_recv_time1;
@@ -34,6 +36,8 @@ struct ngx_rtmp_bandwidth_detection_ctx_s {
 };
 
 typedef struct {
+    ngx_flag_t                          auto_sense_bw;          // Do multiple calls onBWCheck, and onBWDone
+                                                                // Or just fast onBWDone
     ngx_msec_t                          latency_min;            // Minimal detectable latency, msec
     ngx_msec_t                          latency_max;            // Maximum latency assumed, msec
     ngx_msec_t                          latency_undef;          // Default latency for modem, msec

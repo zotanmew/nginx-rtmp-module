@@ -33,6 +33,13 @@ static u_char                              *payload;               // Payload da
 
 static ngx_command_t  ngx_rtmp_bandwidth_detection_commands[] = {
 
+    { ngx_string("auto_sense_bw"),
+      NGX_RTMP_MAIN_CONF|NGX_RTMP_SRV_CONF|NGX_RTMP_APP_CONF|NGX_CONF_TAKE1,
+      ngx_conf_set_flag_slot,
+      NGX_RTMP_APP_CONF_OFFSET,
+      offsetof(ngx_rtmp_bandwidth_detection_app_conf_t, auto_sense_bw),
+      NULL },
+
     { ngx_string("latency_min"),
       NGX_RTMP_MAIN_CONF|NGX_RTMP_SRV_CONF|NGX_RTMP_APP_CONF|NGX_CONF_TAKE1,
       ngx_rtmp_bandwidth_detection_set_msec_slot,
@@ -104,6 +111,7 @@ ngx_rtmp_bandwidth_detection_create_app_conf(ngx_conf_t *cf)
         return NULL;
     }
 
+    acf->auto_sense_bw = NGX_CONF_UNSET;
     acf->latency_max = NGX_CONF_UNSET_MSEC;
     acf->latency_min = NGX_CONF_UNSET_MSEC;
     acf->latency_undef = NGX_CONF_UNSET_MSEC;
@@ -125,6 +133,7 @@ ngx_rtmp_bandwidth_detection_merge_app_conf(ngx_conf_t *cf, void *parent, void *
     ngx_rtmp_bandwidth_detection_app_conf_t *prev = parent;
     ngx_rtmp_bandwidth_detection_app_conf_t *conf = child;
 
+    ngx_conf_merge_value(conf->auto_sense_bw, prev->auto_sense_bw, 0);
     ngx_conf_merge_msec_value(conf->latency_max, prev->latency_max, 800);
     ngx_conf_merge_msec_value(conf->latency_min, prev->latency_min, 10);
     ngx_conf_merge_msec_value(conf->latency_undef, prev->latency_undef, 100);
@@ -256,7 +265,6 @@ ngx_rtmp_bandwidth_detection_on_error(ngx_rtmp_session_t *s, ngx_rtmp_header_t *
     return NGX_OK;
 }
 
-
 /**
  * Start bandwidth detection here
  */
@@ -310,20 +318,131 @@ ngx_rtmp_bandwidth_detection_start(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h, 
         ngx_log_debug0(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
                        "bandwidth_detection: start - already active!");
         return NGX_OK;
-    }
+    } else {
 
-    bw_ctx->active = 1;
-    bw_ctx->bw_begin_time = ngx_cached_time->msec;
-    bw_ctx->pkt_sent = 1;
-    bw_ctx->pkt_received = 0;
-    bw_ctx->pkt_recv_time1 = 0;
-    bw_ctx->pkt_recv_time2 = 0;
-    bw_ctx->cum_latency = 0;
-    bw_ctx->latency = acf->latency_min;
-    bw_ctx->bytes_out = s->out_bytes;
+        bw_ctx->active = 1;
+        bw_ctx->bw_begin_time = ngx_cached_time->msec;
+        bw_ctx->pkt_sent = 1;
+        bw_ctx->pkt_received = 0;
+        bw_ctx->pkt_recv_time1 = 0;
+        bw_ctx->pkt_recv_time2 = 0;
+        bw_ctx->cum_latency = 0;
+        bw_ctx->latency = acf->latency_min;
+        bw_ctx->bytes_out = s->out_bytes;
+    }
 
     // Send first packet with empty payload - for latency calculation
     return ngx_rtmp_send_bwcheck(s, NULL, 0);
+}
+
+
+/**
+ * FAST multicall bandwidth detection here
+ */
+static ngx_int_t
+ngx_rtmp_bandwidth_detection_fast(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h, ngx_chain_t *in)
+{
+
+    ngx_rtmp_bandwidth_detection_app_conf_t         *acf;
+    ngx_rtmp_bandwidth_detection_ctx_t              *bw_ctx;
+    ngx_uint_t                                      timePassed;
+    ngx_uint_t                                      deltaDown;
+    double                                          deltaTime;
+    double                                          kbitDown;
+
+    ngx_log_debug0(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
+                   "bandwidth_detection: fast");
+
+    if (s->relay) {
+        ngx_log_debug0(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
+                       "bandwidth_detection: fast - no relay please!");
+        return NGX_ERROR;
+    }
+
+    acf = ngx_rtmp_get_module_app_conf(s, ngx_rtmp_bandwidth_detection_module);
+    if (acf == NULL) {
+        ngx_log_error(NGX_LOG_WARN, s->connection->log, 0,
+                       "bandwidth_detection: fast - no app config!");
+        return NGX_ERROR;
+    }
+
+    if (!acf->test_time || in == NULL  || in->buf == NULL) {
+        ngx_log_debug0(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
+                       "bandwidth_detection: fast - no test time or no buffer!");
+        return NGX_ERROR;
+    }
+
+    bw_ctx = ngx_rtmp_get_module_ctx(s, ngx_rtmp_bandwidth_detection_module);
+    if (bw_ctx == NULL) {
+        ngx_log_debug0(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
+                       "bandwidth_detection: fast - no context! create new and set for module and session!");
+
+        bw_ctx = ngx_palloc(s->connection->pool, sizeof(ngx_rtmp_bandwidth_detection_ctx_t));
+        if (bw_ctx == NULL) {
+            ngx_log_debug0(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
+                       "bandwidth_detection: fast - no context created!");
+            return NGX_ERROR;
+        }
+
+        ngx_rtmp_set_ctx(s, bw_ctx, ngx_rtmp_bandwidth_detection_module);
+        ngx_memzero(bw_ctx, sizeof(*bw_ctx));
+
+        bw_ctx->bw_begin_time2 = h->timestamp * 1000;
+        bw_ctx->latency = acf->latency_min;
+    }
+
+    /* Emulate accumulation between calls */
+    bw_ctx->bw_begin_time = bw_ctx->bw_begin_time2;
+    bw_ctx->bw_begin_time2 = ngx_cached_time->msec;
+    bw_ctx->bytes_out = bw_ctx->bytes_out2;
+    bw_ctx->bytes_out2 = s->out_bytes;
+
+    deltaDown = (bw_ctx->bytes_out2 - bw_ctx->bytes_out) *8/1000.;
+    deltaTime = ( (bw_ctx->bw_begin_time2 - bw_ctx->bw_begin_time) - (bw_ctx->latency))/1000.;
+
+    if (deltaTime <= 0) deltaTime = (bw_ctx->bw_begin_time2 - bw_ctx->bw_begin_time)/1000.;
+    if (deltaTime <= 0) deltaTime = 1.;
+
+    kbitDown = deltaDown/deltaTime;
+
+    // Do some load for next call
+    ngx_rtmp_send_bwcheck(s, payload, NGX_RTMP_BANDWIDTH_DETECTION_PAYLOAD_LENGTH);
+
+    timePassed = bw_ctx->bw_begin_time2 - bw_ctx->bw_begin_time;
+
+    bw_ctx->latency = ngx_min(timePassed, acf->latency_max);
+    bw_ctx->latency = ngx_max(bw_ctx->latency, acf->latency_min);
+
+    ngx_log_debug0(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
+                   "bandwidth_detection: fast - check done!");
+    ngx_log_debug5(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
+                   "bandwidth_detection: fast - kbitDown=%ui, deltaDown=%.3f, deltaTime=%.3f, latency=%.3f, KBytes=%ui",
+                   kbitDown, deltaDown, deltaTime, bw_ctx->latency, (bw_ctx->bytes_out2 - bw_ctx->bytes_out)/1024);
+
+    return ngx_rtmp_send_bwdone(s, kbitDown, deltaDown, deltaTime, bw_ctx->latency);
+}
+
+
+/**
+ * Bandwidth detection wrapper
+ */
+static ngx_int_t
+ngx_rtmp_bandwidth_detection_wrapper(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h, ngx_chain_t *in)
+{
+    ngx_rtmp_bandwidth_detection_app_conf_t         *acf;
+
+    acf = ngx_rtmp_get_module_app_conf(s, ngx_rtmp_bandwidth_detection_module);
+    if (acf == NULL) {
+        ngx_log_error(NGX_LOG_WARN, s->connection->log, 0,
+                       "bandwidth_detection: wrapper - no app config!");
+        return NGX_ERROR;
+    }
+
+    if (acf->auto_sense_bw) {
+        return ngx_rtmp_bandwidth_detection_start(s, h, in);
+    } else {
+        return ngx_rtmp_bandwidth_detection_fast(s, h, in);
+    }
 }
 
 
@@ -490,6 +609,7 @@ ngx_rtmp_bandwidth_detection_check_result(ngx_rtmp_session_t *s)
         deltaTime = ( (ngx_cached_time->msec - bw_ctx->bw_begin_time) - (bw_ctx->latency*bw_ctx->cum_latency))/1000.;
 
         if (deltaTime <= 0) deltaTime = (ngx_cached_time->msec - bw_ctx->bw_begin_time)/1000.;
+        if (deltaTime <= 0) deltaTime = 1.;
 
         kbitDown = deltaDown/deltaTime;
 
@@ -529,7 +649,7 @@ ngx_rtmp_bandwidth_detection_postconfiguration(ngx_conf_t *cf)
 
     ch = ngx_array_push(&cmcf->amf);
     ngx_str_set(&ch->name, "checkBandwidth");
-    ch->handler = ngx_rtmp_bandwidth_detection_start;
+    ch->handler = ngx_rtmp_bandwidth_detection_wrapper;
 
     ch = ngx_array_push(&cmcf->amf);
     ngx_str_set(&ch->name, "onClientBWCheck");
