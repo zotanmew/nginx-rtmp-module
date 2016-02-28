@@ -266,7 +266,6 @@ ngx_rtmp_bandwidth_detection_start(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h, 
 
     ngx_rtmp_bandwidth_detection_app_conf_t         *acf;
     ngx_rtmp_bandwidth_detection_ctx_t              *bw_ctx;
-    ngx_rtmp_live_ctx_t                             *lv_ctx;
 
     ngx_log_debug0(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
                    "bandwidth_detection: start");
@@ -294,23 +293,23 @@ ngx_rtmp_bandwidth_detection_start(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h, 
     if (bw_ctx == NULL) {
         ngx_log_debug0(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
                        "bandwidth_detection: start - no context! create new and set for module and session!");
-        bw_ctx = ngx_palloc(s->connection->pool, sizeof(ngx_rtmp_bandwidth_detection_ctx_t));
-        ngx_rtmp_set_ctx(s, bw_ctx, ngx_rtmp_bandwidth_detection_module);
-    }
 
-    ngx_memzero(bw_ctx, sizeof(*bw_ctx));
+        bw_ctx = ngx_palloc(s->connection->pool, sizeof(ngx_rtmp_bandwidth_detection_ctx_t));
+        if (bw_ctx == NULL) {
+            ngx_log_debug0(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
+                       "bandwidth_detection: start - no context created!");
+            return NGX_ERROR;
+        }
+
+        ngx_rtmp_set_ctx(s, bw_ctx, ngx_rtmp_bandwidth_detection_module);
+        ngx_memzero(bw_ctx, sizeof(*bw_ctx));
+
+    }
 
     if (bw_ctx->active) {
         ngx_log_debug0(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
                        "bandwidth_detection: start - already active!");
         return NGX_OK;
-    }
-
-    lv_ctx = ngx_rtmp_get_module_ctx(s, ngx_rtmp_live_module);
-    if (lv_ctx == NULL) {
-        ngx_log_debug0(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
-                       "bandwidth_detection: start - no live context!");
-        return NGX_ERROR;
     }
 
     bw_ctx->active = 1;
@@ -321,7 +320,7 @@ ngx_rtmp_bandwidth_detection_start(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h, 
     bw_ctx->pkt_recv_time2 = 0;
     bw_ctx->cum_latency = 0;
     bw_ctx->latency = acf->latency_min;
-    bw_ctx->bytes_out = lv_ctx->stream->bw_out.bytes;
+    bw_ctx->bytes_out = s->out_bytes;
 
     // Send first packet with empty payload - for latency calculation
     return ngx_rtmp_send_bwcheck(s, NULL);
@@ -337,7 +336,6 @@ ngx_rtmp_bandwidth_detection_check_result(ngx_rtmp_session_t *s)
 
     ngx_rtmp_bandwidth_detection_app_conf_t         *acf;
     ngx_rtmp_bandwidth_detection_ctx_t              *bw_ctx;
-    ngx_rtmp_live_ctx_t                             *lv_ctx;
     ngx_uint_t                                      timePassed;
     ngx_uint_t                                      deltaDown;
     double                                          deltaTime;
@@ -369,18 +367,6 @@ ngx_rtmp_bandwidth_detection_check_result(ngx_rtmp_session_t *s)
     if (!bw_ctx->active) {
         ngx_log_debug0(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
                        "bandwidth_detection: check - not active!");
-        return NGX_OK;
-    }
-
-    lv_ctx = ngx_rtmp_get_module_ctx(s, ngx_rtmp_live_module);
-    if (lv_ctx == NULL) {
-        ngx_log_debug0(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
-                       "bandwidth_detection: check - no live context!");
-        return NGX_OK;
-    }
-    if (lv_ctx->stream == NULL) {
-        ngx_log_debug0(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
-                       "bandwidth_detection: check - no live stream!");
         return NGX_OK;
     }
 
@@ -417,7 +403,7 @@ ngx_rtmp_bandwidth_detection_check_result(ngx_rtmp_session_t *s)
 
         }
 
-        bytesOut = lv_ctx->stream->bw_out.bytes;
+        bytesOut = s->out_bytes;
         deltaDown = (bytesOut - bw_ctx->bytes_out) *8/1000.;
         deltaTime = ( (ngx_cached_time->msec - bw_ctx->bw_begin_time) - (bw_ctx->latency*bw_ctx->cum_latency))/1000.;
 
@@ -461,6 +447,10 @@ ngx_rtmp_bandwidth_detection_postconfiguration(ngx_conf_t *cf)
 
     ch = ngx_array_push(&cmcf->amf);
     ngx_str_set(&ch->name, "checkBandwidth");
+    ch->handler = ngx_rtmp_bandwidth_detection_start;
+
+    ch = ngx_array_push(&cmcf->amf);
+    ngx_str_set(&ch->name, "onClientBWCheck");
     ch->handler = ngx_rtmp_bandwidth_detection_start;
 
     return NGX_OK;

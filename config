@@ -6,8 +6,8 @@ RTMP_CORE_MODULES="                                         \
                 ngx_rtmp_codec_module                       \
                 ngx_rtmp_access_module                      \
                 ngx_rtmp_record_module                      \
-                ngx_rtmp_live_module                        \
                 ngx_rtmp_bandwidth_detection_module         \
+                ngx_rtmp_live_module                        \
                 ngx_rtmp_play_module                        \
                 ngx_rtmp_flv_module                         \
                 ngx_rtmp_mp4_module                         \
@@ -33,8 +33,8 @@ RTMP_DEPS="                                                 \
                 $ngx_addon_dir/ngx_rtmp_eval.h              \
                 $ngx_addon_dir/ngx_rtmp.h                   \
                 $ngx_addon_dir/ngx_rtmp_version.h           \
-                $ngx_addon_dir/ngx_rtmp_live_module.h       \
                 $ngx_addon_dir/ngx_rtmp_bandwidth_detection_module.h \
+                $ngx_addon_dir/ngx_rtmp_live_module.h       \
                 $ngx_addon_dir/ngx_rtmp_netcall_module.h    \
                 $ngx_addon_dir/ngx_rtmp_play_module.h       \
                 $ngx_addon_dir/ngx_rtmp_record_module.h     \
@@ -60,8 +60,8 @@ RTMP_CORE_SRCS="                                            \
                 $ngx_addon_dir/ngx_rtmp_codec_module.c      \
                 $ngx_addon_dir/ngx_rtmp_access_module.c     \
                 $ngx_addon_dir/ngx_rtmp_record_module.c     \
-                $ngx_addon_dir/ngx_rtmp_live_module.c       \
                 $ngx_addon_dir/ngx_rtmp_bandwidth_detection_module.c \
+                $ngx_addon_dir/ngx_rtmp_live_module.c       \
                 $ngx_addon_dir/ngx_rtmp_play_module.c       \
                 $ngx_addon_dir/ngx_rtmp_flv_module.c        \
                 $ngx_addon_dir/ngx_rtmp_mp4_module.c        \
