@@ -234,11 +234,15 @@ ngx_rtmp_bandwidth_detection_start(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h, 
     ngx_rtmp_bandwidth_detection_ctx_t              *bw_ctx;
     ngx_rtmp_live_ctx_t                             *lv_ctx;
 
+    static struct {
+        double                  trans;
+    } v;
+
     static ngx_rtmp_amf_elt_t   in_elts[] = {
 
         { NGX_RTMP_AMF_NUMBER,
           ngx_null_string,
-          "checkBandwidth", 0 },
+          &v.trans, 0 },
 
     };
 

@@ -1024,7 +1024,10 @@ ngx_rtmp_create_bwcheck(ngx_rtmp_session_t *s, u_char *payload)
           sizeof(out_inf) },
     };
 
-    out_inf[0].data = payload;
+    if (payload != NULL) {
+        out_inf[0].data = payload;
+        out_inf[0].len = ngx_strlen(payload);
+    }
     trans = NGX_RTMP_BANDWIDTH_DETECTION_BWCHECK_TRANS;
 
     memset(&h, 0, sizeof(h));
