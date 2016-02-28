@@ -1026,7 +1026,7 @@ ngx_rtmp_create_bwcheck(ngx_rtmp_session_t *s, u_char *payload, size_t plength)
 
     if (payload != NULL) {
         out_inf[0].data = payload;
-        out_inf[0].len = ngx_strlen(payload);
+        out_inf[0].len = plength;
     }
     trans = NGX_RTMP_BANDWIDTH_DETECTION_BWCHECK_TRANS;
 

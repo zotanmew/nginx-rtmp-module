@@ -387,8 +387,9 @@ ngx_rtmp_bandwidth_detection_fast(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h, n
         ngx_rtmp_set_ctx(s, bw_ctx, ngx_rtmp_bandwidth_detection_module);
         ngx_memzero(bw_ctx, sizeof(*bw_ctx));
 
-        bw_ctx->bw_begin_time2 = h->timestamp * 1000;
+        bw_ctx->bw_begin_time2 = 0;
         bw_ctx->latency = acf->latency_min;
+        bw_ctx->bytes_out2 = 0;
     }
 
     /* Emulate accumulation between calls */
