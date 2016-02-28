@@ -169,6 +169,7 @@ static ngx_int_t
 ngx_rtmp_bandwidth_detection_on_result(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h,
         ngx_chain_t *in)
 {
+    ngx_rtmp_bandwidth_detection_app_conf_t         *acf;
     ngx_rtmp_bandwidth_detection_ctx_t       *ctx;
 
     static struct {
@@ -195,6 +196,13 @@ ngx_rtmp_bandwidth_detection_on_result(ngx_rtmp_session_t *s, ngx_rtmp_header_t 
     ngx_log_debug0(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
                    "bandwidth_detection: _result");
 
+    acf = ngx_rtmp_get_module_app_conf(s, ngx_rtmp_bandwidth_detection_module);
+    if (acf == NULL) {
+        ngx_log_error(NGX_LOG_WARN, s->connection->log, 0,
+                       "bandwidth_detection: _result - no app config!");
+        return NGX_ERROR;
+    }
+
     ctx = ngx_rtmp_get_module_ctx(s, ngx_rtmp_bandwidth_detection_module);
     if (ctx == NULL || s->relay) {
         ngx_log_debug0(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
@@ -215,16 +223,18 @@ ngx_rtmp_bandwidth_detection_on_result(ngx_rtmp_session_t *s, ngx_rtmp_header_t 
             "bandwidth_detection: _result: trans='%f' count='%ui'",
             v.trans, v.count);
 
-    switch ((ngx_int_t)v.trans) {
-        case NGX_RTMP_BANDWIDTH_DETECTION_BWCHECK_TRANS:
-            return ngx_rtmp_bandwidth_detection_check_result(s);
+    if (acf->auto_sense_bw) {
+        switch ((ngx_int_t)v.trans) {
+            case NGX_RTMP_BANDWIDTH_DETECTION_BWCHECK_TRANS:
+                return ngx_rtmp_bandwidth_detection_check_result(s);
 
-        case NGX_RTMP_BANDWIDTH_DETECTION_BWDONE_TRANS:
-            /* Need to test it. Maybe need to set this before send bwDone. */
-            ctx->active = 0;
-            break;
-        default:
-            return NGX_OK;
+            case NGX_RTMP_BANDWIDTH_DETECTION_BWDONE_TRANS:
+                /* Need to test it. Maybe need to set this before send bwDone. */
+                ctx->active = 0;
+                break;
+            default:
+                return NGX_OK;
+        }
     }
     return NGX_OK;
 }

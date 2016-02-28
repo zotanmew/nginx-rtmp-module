@@ -996,14 +996,6 @@ ngx_rtmp_create_bwcheck(ngx_rtmp_session_t *s, u_char *payload, size_t plength)
 
     static double                   trans;
 
-    static ngx_rtmp_amf_elt_t       out_inf[] = {
-
-        { NGX_RTMP_AMF_STRING,
-          ngx_string("payload"),
-          NULL, 0 },
-
-    };
-
     static ngx_rtmp_amf_elt_t       out_elts[] = {
 
         { NGX_RTMP_AMF_STRING,
@@ -1014,15 +1006,18 @@ ngx_rtmp_create_bwcheck(ngx_rtmp_session_t *s, u_char *payload, size_t plength)
           ngx_null_string,
           &trans, 0 },
 
-        { NGX_RTMP_AMF_OBJECT,
+        { NGX_RTMP_AMF_NULL,
           ngx_null_string,
-          out_inf,
-          sizeof(out_inf) },
+          NULL, 0 },
+
+        { NGX_RTMP_AMF_STRING,
+          ngx_null_string,
+          NULL, 0 },
     };
 
     if (payload != NULL) {
-        out_inf[0].data = payload;
-        out_inf[0].len = plength;
+        out_elts[3].data = payload;
+        out_elts[3].len = plength;
     }
     trans = NGX_RTMP_BANDWIDTH_DETECTION_BWCHECK_TRANS;
 
@@ -1053,30 +1048,10 @@ ngx_rtmp_create_bwdone(ngx_rtmp_session_t *s,
     static double                   trans;
     static struct {
         double                  kbitDown;
-        ngx_uint_t              deltaDown;
+        double                  deltaDown;
         double                  deltaTime;
-        ngx_msec_t              latency;
+        double                  latency;
     } v;
-
-    static ngx_rtmp_amf_elt_t       out_inf[] = {
-
-        { NGX_RTMP_AMF_NUMBER,
-          ngx_string("kbitDown"),
-          &v.kbitDown, 0 },
-
-        { NGX_RTMP_AMF_NUMBER,
-          ngx_string("deltaDown"),
-          &v.deltaDown, 0 },
-
-        { NGX_RTMP_AMF_NUMBER,
-          ngx_string("deltaTime"),
-          &v.deltaTime, 0 },
-
-        { NGX_RTMP_AMF_NUMBER,
-          ngx_string("latency"),
-          &v.latency, 0 },
-
-    };
 
     static ngx_rtmp_amf_elt_t       out_elts[] = {
 
@@ -1088,10 +1063,26 @@ ngx_rtmp_create_bwdone(ngx_rtmp_session_t *s,
           ngx_null_string,
           &trans, 0 },
 
-        { NGX_RTMP_AMF_OBJECT,
+        { NGX_RTMP_AMF_NULL,
           ngx_null_string,
-          out_inf,
-          sizeof(out_inf) },
+          NULL, 0 },
+
+        { NGX_RTMP_AMF_NUMBER,
+          ngx_null_string,
+          &v.kbitDown, 0 },
+
+        { NGX_RTMP_AMF_NUMBER,
+          ngx_null_string,
+          &v.deltaDown, 0 },
+
+        { NGX_RTMP_AMF_NUMBER,
+          ngx_null_string,
+          &v.deltaTime, 0 },
+
+        { NGX_RTMP_AMF_NUMBER,
+          ngx_null_string,
+          &v.latency, 0 },
+
     };
 
     ngx_memzero(&v, sizeof(v));
