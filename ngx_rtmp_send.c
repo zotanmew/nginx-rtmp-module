@@ -1127,3 +1127,69 @@ ngx_rtmp_send_bwdone(ngx_rtmp_session_t *s,
     return ngx_rtmp_send_shared_packet(s,
            ngx_rtmp_create_bwdone(s, kbitDown, deltaDown, deltaTime, latency));
 }
+
+
+ngx_int_t
+ngx_rtmp_send_onclientbwcheck(ngx_rtmp_session_t *s, double inTrans,
+                              double cOutBytes, double cInBytes, ngx_uint_t inTime)
+{
+    ngx_rtmp_core_srv_conf_t   *cscf;
+    ngx_rtmp_core_app_conf_t  **cacfp;
+    ngx_uint_t                  n;
+    ngx_rtmp_header_t           h;
+    u_char                     *p;
+
+    static struct {
+        double                  cOutBytes;
+        double                  cInBytes;
+        ngx_msec_t              time;
+        double                  trans;
+    } v;
+
+    static ngx_rtmp_amf_elt_t  out_inf[] = {
+
+        { NGX_RTMP_AMF_NUMBER,
+          ngx_string("cOutBytes"),
+          &v.cOutBytes, 0 },
+
+        { NGX_RTMP_AMF_NUMBER,
+          ngx_string("cInBytes"),
+          &v.cInBytes, 0 },
+
+        { NGX_RTMP_AMF_NUMBER,
+          ngx_string("time"),
+          &v.time, 0 },
+
+    };
+
+    static ngx_rtmp_amf_elt_t  out_elts[] = {
+
+        { NGX_RTMP_AMF_STRING,
+          ngx_null_string,
+          "_result", 0 },
+
+        { NGX_RTMP_AMF_NUMBER,
+          ngx_null_string,
+          &v.trans, 0 },
+
+        { NGX_RTMP_AMF_OBJECT,
+          ngx_null_string,
+          out_obj, sizeof(out_inf) },
+
+    };
+
+    ngx_memzero(&v, sizeof(v));
+
+    v.cOutBytes = cOutBytes;
+    v.cInBytes = cInBytes;
+    v.time = inTime;
+    v.trans = inTrans;
+
+    ngx_memzero(&h, sizeof(h));
+    h.csid = NGX_RTMP_CSID_AMF_INI;
+    h.type = NGX_RTMP_MSG_AMF_CMD;
+
+    return ngx_rtmp_send_amf(s, &h, out_elts,
+                             sizeof(out_elts) / sizeof(out_elts[0])) == NGX_OK ?
+           NGX_DONE : NGX_ERROR;
+}

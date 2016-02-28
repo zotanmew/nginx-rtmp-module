@@ -328,6 +328,88 @@ ngx_rtmp_bandwidth_detection_start(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h, 
 
 
 /**
+ * Bandwidth detection from client side
+ */
+static ngx_int_t
+ngx_rtmp_bandwidth_detection_clientcheck(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h, ngx_chain_t *in)
+{
+
+    ngx_rtmp_bandwidth_detection_app_conf_t         *acf;
+    ngx_rtmp_bandwidth_detection_ctx_t              *bw_ctx;
+
+    static struct {
+        double                  trans;
+        ngx_msec_t              time;
+    } v;
+
+    static ngx_rtmp_amf_elt_t   in_elts[] = {
+
+        { NGX_RTMP_AMF_NUMBER,
+          ngx_null_string,
+          &v.trans, 0 },
+
+        { NGX_RTMP_AMF_NULL,
+          ngx_null_string,
+          NULL, 0 },
+
+        { NGX_RTMP_AMF_NUMBER,
+          ngx_null_string,
+          &v.time, 0 },
+
+    };
+
+    ngx_log_debug0(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
+                   "bandwidth_detection: bwcheck");
+
+    if (s->relay) {
+        ngx_log_debug0(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
+                       "bandwidth_detection: bwcheck - no relay please!");
+        return NGX_ERROR;
+    }
+
+    acf = ngx_rtmp_get_module_app_conf(s, ngx_rtmp_bandwidth_detection_module);
+    if (acf == NULL) {
+        ngx_log_error(NGX_LOG_WARN, s->connection->log, 0,
+                       "bandwidth_detection: bwcheck - no app config!");
+        return NGX_ERROR;
+    }
+
+    bw_ctx = ngx_rtmp_get_module_ctx(s, ngx_rtmp_bandwidth_detection_module);
+    if (bw_ctx == NULL) {
+        ngx_log_debug0(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
+                       "bandwidth_detection: bwcheck - no context! create new and set for module and session!");
+
+        bw_ctx = ngx_palloc(s->connection->pool, sizeof(ngx_rtmp_bandwidth_detection_ctx_t));
+        if (bw_ctx == NULL) {
+            ngx_log_debug0(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
+                       "bandwidth_detection: bwcheck - no context created!");
+            return NGX_ERROR;
+        }
+
+        ngx_rtmp_set_ctx(s, bw_ctx, ngx_rtmp_bandwidth_detection_module);
+        ngx_memzero(bw_ctx, sizeof(*bw_ctx));
+
+    }
+
+    ngx_memzero(&v, sizeof(v));
+    if (ngx_rtmp_receive_amf(s, in, in_elts,
+                sizeof(in_elts) / sizeof(in_elts[0])))
+    {
+        ngx_log_error(NGX_LOG_WARN, s->connection->log, 0,
+                       "bandwidth_detection: bwcheck - no packet readed!");
+        return NGX_ERROR;
+    }
+
+    ngx_log_debug2(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
+            "bandwidth_detection: bwcheck: trans='%f' time='%ui'",
+            v.trans, v.time);
+
+    // Send first packet with empty payload - for latency calculation
+    return ngx_rtmp_send_onclientbwcheck(s, v.trans, s->out_bytes, s->in_bytes, v.time);
+}
+
+
+/**
  * End bandwidth detection here
  */
 static ngx_int_t
@@ -451,7 +533,7 @@ ngx_rtmp_bandwidth_detection_postconfiguration(ngx_conf_t *cf)
 
     ch = ngx_array_push(&cmcf->amf);
     ngx_str_set(&ch->name, "onClientBWCheck");
-    ch->handler = ngx_rtmp_bandwidth_detection_start;
+    ch->handler = ngx_rtmp_bandwidth_detection_clientcheck;
 
     return NGX_OK;
 }

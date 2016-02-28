@@ -592,6 +592,8 @@ ngx_int_t ngx_rtmp_send_fi(ngx_rtmp_session_t *s);
 ngx_int_t ngx_rtmp_send_bwcheck(ngx_rtmp_session_t *s, u_char *payload);
 ngx_int_t ngx_rtmp_send_bwdone(ngx_rtmp_session_t *s,
                                double kbitDown, ngx_uint_t deltaDown, double deltaTime, ngx_msec_t latency);
+ngx_int_t ngx_rtmp_send_onclientbwcheck(ngx_rtmp_session_t *s, double inTrans,
+                                        double cOutBytes, double cInBytes, ngx_uint_t inTime);
 
 
 /* Frame types */
