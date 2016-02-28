@@ -104,7 +104,7 @@ ngx_rtmp_bandwidth_detection_create_app_conf(ngx_conf_t *cf)
         return NULL;
     }
 
-    acf->latency_max = NGX_CONF_UNSET;
+    acf->latency_max = NGX_CONF_UNSET_MSEC;
     acf->latency_min = NGX_CONF_UNSET_MSEC;
     acf->latency_undef = NGX_CONF_UNSET_MSEC;
     acf->test_time = NGX_CONF_UNSET_MSEC;
@@ -287,15 +287,19 @@ ngx_rtmp_bandwidth_detection_start(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h, 
     if (!acf->test_time || in == NULL  || in->buf == NULL) {
         ngx_log_debug0(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
                        "bandwidth_detection: start - no test time or no buffer!");
-        return NGX_OK;
+        return NGX_ERROR;
     }
 
     bw_ctx = ngx_rtmp_get_module_ctx(s, ngx_rtmp_bandwidth_detection_module);
     if (bw_ctx == NULL) {
         ngx_log_debug0(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
-                       "bandwidth_detection: start - no bw context!");
-        return NGX_OK;
+                       "bandwidth_detection: start - no context! create new and set for module and session!");
+        bw_ctx = ngx_palloc(s->connection->pool, sizeof(ngx_rtmp_bandwidth_detection_ctx_t));
+        ngx_rtmp_set_ctx(s, bw_ctx, ngx_rtmp_bandwidth_detection_module);
     }
+
+    ngx_memzero(bw_ctx, sizeof(*bw_ctx));
+
     if (bw_ctx->active) {
         ngx_log_debug0(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
                        "bandwidth_detection: start - already active!");
@@ -306,7 +310,7 @@ ngx_rtmp_bandwidth_detection_start(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h, 
     if (lv_ctx == NULL) {
         ngx_log_debug0(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
                        "bandwidth_detection: start - no live context!");
-        return NGX_OK;
+        return NGX_ERROR;
     }
 
     bw_ctx->active = 1;
