@@ -39,8 +39,6 @@ typedef struct {
     ngx_msec_t                          latency_undef;          // Default latency for modem, msec
                                                                 // or satellite connections or undetectable one
     ngx_msec_t                          test_time;              // How long test bandwidth, msec
-
-    u_char                              *payload;               // Payload data for all
 } ngx_rtmp_bandwidth_detection_app_conf_t;
 
 
