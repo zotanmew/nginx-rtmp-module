@@ -225,8 +225,6 @@ static ngx_int_t
 ngx_rtmp_bandwidth_detection_on_error(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h,
         ngx_chain_t *in)
 {
-    ngx_rtmp_bandwidth_detection_ctx_t       *ctx;
-
     static struct {
         double                  trans;
     } v;
