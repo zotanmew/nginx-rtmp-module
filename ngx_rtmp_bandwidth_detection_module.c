@@ -203,9 +203,9 @@ ngx_rtmp_bandwidth_detection_on_result(ngx_rtmp_session_t *s, ngx_rtmp_header_t 
         return NGX_ERROR;
     }
 
-    ngx_log_debug3(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
-            "relay: _result: level='%s' code='%s' description='%s'",
-            v.level, v.code, v.desc);
+    ngx_log_debug2(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
+            "bandwidth_detection: _result: trans='%f' count='%ui'",
+            v.trans, v.count);
 
     switch ((ngx_int_t)v.trans) {
         case NGX_RTMP_BANDWIDTH_DETECTION_BWCHECK_TRANS:
