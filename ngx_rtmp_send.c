@@ -999,7 +999,7 @@ ngx_rtmp_create_bwcheck(ngx_rtmp_session_t *s, u_char *payload, size_t plength)
     static ngx_rtmp_amf_elt_t       out_inf[] = {
 
         { NGX_RTMP_AMF_STRING,
-          ngx_null_string,
+          ngx_string("payload"),
           NULL, 0 },
 
     };
@@ -1013,10 +1013,6 @@ ngx_rtmp_create_bwcheck(ngx_rtmp_session_t *s, u_char *payload, size_t plength)
         { NGX_RTMP_AMF_NUMBER,
           ngx_null_string,
           &trans, 0 },
-
-        { NGX_RTMP_AMF_NULL,
-          ngx_null_string,
-          NULL, 0 },
 
         { NGX_RTMP_AMF_OBJECT,
           ngx_null_string,
@@ -1033,7 +1029,7 @@ ngx_rtmp_create_bwcheck(ngx_rtmp_session_t *s, u_char *payload, size_t plength)
     memset(&h, 0, sizeof(h));
 
     h.type = NGX_RTMP_MSG_AMF_CMD;
-    h.csid = NGX_RTMP_CSID_AMF;
+    h.csid = NGX_RTMP_CSID_AMF_INI;
     h.msid = NGX_RTMP_MSID;
 
     return ngx_rtmp_create_amf(s, &h, out_elts,
@@ -1065,19 +1061,19 @@ ngx_rtmp_create_bwdone(ngx_rtmp_session_t *s,
     static ngx_rtmp_amf_elt_t       out_inf[] = {
 
         { NGX_RTMP_AMF_NUMBER,
-          ngx_null_string,
+          ngx_string("kbitDown"),
           &v.kbitDown, 0 },
 
         { NGX_RTMP_AMF_NUMBER,
-          ngx_null_string,
+          ngx_string("deltaDown"),
           &v.deltaDown, 0 },
 
         { NGX_RTMP_AMF_NUMBER,
-          ngx_null_string,
+          ngx_string("deltaTime"),
           &v.deltaTime, 0 },
 
         { NGX_RTMP_AMF_NUMBER,
-          ngx_null_string,
+          ngx_string("latency"),
           &v.latency, 0 },
 
     };
@@ -1091,10 +1087,6 @@ ngx_rtmp_create_bwdone(ngx_rtmp_session_t *s,
         { NGX_RTMP_AMF_NUMBER,
           ngx_null_string,
           &trans, 0 },
-
-        { NGX_RTMP_AMF_NULL,
-          ngx_null_string,
-          NULL, 0 },
 
         { NGX_RTMP_AMF_OBJECT,
           ngx_null_string,
@@ -1112,7 +1104,7 @@ ngx_rtmp_create_bwdone(ngx_rtmp_session_t *s,
     memset(&h, 0, sizeof(h));
 
     h.type = NGX_RTMP_MSG_AMF_CMD;
-    h.csid = NGX_RTMP_CSID_AMF;
+    h.csid = NGX_RTMP_CSID_AMF_INI;
     h.msid = NGX_RTMP_MSID;
 
     return ngx_rtmp_create_amf(s, &h, out_elts,
