@@ -356,7 +356,7 @@ ngx_rtmp_bandwidth_detection_fast(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h, n
     ngx_rtmp_bandwidth_detection_app_conf_t         *acf;
     ngx_rtmp_bandwidth_detection_ctx_t              *bw_ctx;
     ngx_uint_t                                      timePassed;
-    ngx_uint_t                                      deltaDown;
+    double                                          deltaDown;
     double                                          deltaTime;
     double                                          kbitDown;
 
@@ -427,7 +427,7 @@ ngx_rtmp_bandwidth_detection_fast(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h, n
     ngx_log_debug0(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
                    "bandwidth_detection: fast - check done!");
     ngx_log_debug5(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
-                   "bandwidth_detection: fast - kbitDown=%ui, deltaDown=%.3f, deltaTime=%.3f, latency=%.3f, KBytes=%ui",
+                   "bandwidth_detection: fast - kbitDown=%.3f, deltaDown=%.3f, deltaTime=%.3f, latency=%.3f, KBytes=%ui",
                    kbitDown, deltaDown, deltaTime, bw_ctx->latency, (bw_ctx->bytes_out2 - bw_ctx->bytes_out)/1024);
 
     return ngx_rtmp_send_bwdone(s, kbitDown, deltaDown, deltaTime, bw_ctx->latency);

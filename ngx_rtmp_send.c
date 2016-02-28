@@ -1024,7 +1024,7 @@ ngx_rtmp_create_bwcheck(ngx_rtmp_session_t *s, u_char *payload, size_t plength)
     memset(&h, 0, sizeof(h));
 
     h.type = NGX_RTMP_MSG_AMF_CMD;
-    h.csid = NGX_RTMP_CSID_AMF_INI;
+    h.csid = NGX_RTMP_CSID_AMF;
     h.msid = NGX_RTMP_MSID;
 
     return ngx_rtmp_create_amf(s, &h, out_elts,
@@ -1095,7 +1095,7 @@ ngx_rtmp_create_bwdone(ngx_rtmp_session_t *s,
     memset(&h, 0, sizeof(h));
 
     h.type = NGX_RTMP_MSG_AMF_CMD;
-    h.csid = NGX_RTMP_CSID_AMF_INI;
+    h.csid = NGX_RTMP_CSID_AMF;
     h.msid = NGX_RTMP_MSID;
 
     return ngx_rtmp_create_amf(s, &h, out_elts,
