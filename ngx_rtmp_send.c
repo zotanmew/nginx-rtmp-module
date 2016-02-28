@@ -1133,11 +1133,7 @@ ngx_int_t
 ngx_rtmp_send_onclientbwcheck(ngx_rtmp_session_t *s, double inTrans,
                               double cOutBytes, double cInBytes, ngx_uint_t inTime)
 {
-    ngx_rtmp_core_srv_conf_t   *cscf;
-    ngx_rtmp_core_app_conf_t  **cacfp;
-    ngx_uint_t                  n;
     ngx_rtmp_header_t           h;
-    u_char                     *p;
 
     static struct {
         double                  cOutBytes;
@@ -1174,7 +1170,7 @@ ngx_rtmp_send_onclientbwcheck(ngx_rtmp_session_t *s, double inTrans,
 
         { NGX_RTMP_AMF_OBJECT,
           ngx_null_string,
-          out_obj, sizeof(out_inf) },
+          out_inf, sizeof(out_inf) },
 
     };
 
