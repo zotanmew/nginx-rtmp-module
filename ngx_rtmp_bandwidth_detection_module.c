@@ -35,42 +35,42 @@ static u_char                              *payload;               // Payload da
 
 static ngx_command_t  ngx_rtmp_bandwidth_detection_commands[] = {
 
-    { ngx_string("auto_start_on_connect"),
+    { ngx_string("bw_auto_start"),
       NGX_RTMP_MAIN_CONF|NGX_RTMP_SRV_CONF|NGX_RTMP_APP_CONF|NGX_CONF_TAKE1,
       ngx_conf_set_flag_slot,
       NGX_RTMP_APP_CONF_OFFSET,
-      offsetof(ngx_rtmp_bandwidth_detection_app_conf_t, auto_start_on_connect),
+      offsetof(ngx_rtmp_bandwidth_detection_app_conf_t, auto_start),
       NULL },
 
-    { ngx_string("auto_sense_bw"),
+    { ngx_string("bw_auto_sense"),
       NGX_RTMP_MAIN_CONF|NGX_RTMP_SRV_CONF|NGX_RTMP_APP_CONF|NGX_CONF_TAKE1,
       ngx_conf_set_flag_slot,
       NGX_RTMP_APP_CONF_OFFSET,
-      offsetof(ngx_rtmp_bandwidth_detection_app_conf_t, auto_sense_bw),
+      offsetof(ngx_rtmp_bandwidth_detection_app_conf_t, auto_sense),
       NULL },
 
-    { ngx_string("latency_min"),
+    { ngx_string("bw_latency_min"),
       NGX_RTMP_MAIN_CONF|NGX_RTMP_SRV_CONF|NGX_RTMP_APP_CONF|NGX_CONF_TAKE1,
       ngx_rtmp_bandwidth_detection_set_msec_slot,
       NGX_RTMP_APP_CONF_OFFSET,
       offsetof(ngx_rtmp_bandwidth_detection_app_conf_t, latency_min),
       NULL },
 
-    { ngx_string("latency_max"),
+    { ngx_string("bw_latency_max"),
       NGX_RTMP_MAIN_CONF|NGX_RTMP_SRV_CONF|NGX_RTMP_APP_CONF|NGX_CONF_TAKE1,
       ngx_rtmp_bandwidth_detection_set_msec_slot,
       NGX_RTMP_APP_CONF_OFFSET,
       offsetof(ngx_rtmp_bandwidth_detection_app_conf_t, latency_max),
       NULL },
 
-    { ngx_string("latency_undef"),
+    { ngx_string("bw_latency_undef"),
       NGX_RTMP_MAIN_CONF|NGX_RTMP_SRV_CONF|NGX_RTMP_APP_CONF|NGX_CONF_TAKE1,
       ngx_rtmp_bandwidth_detection_set_msec_slot,
       NGX_RTMP_APP_CONF_OFFSET,
       offsetof(ngx_rtmp_bandwidth_detection_app_conf_t, latency_undef),
       NULL },
 
-    { ngx_string("test_time"),
+    { ngx_string("bw_auto_sense_time"),
       NGX_RTMP_MAIN_CONF|NGX_RTMP_SRV_CONF|NGX_RTMP_APP_CONF|NGX_CONF_TAKE1,
       ngx_rtmp_bandwidth_detection_set_msec_slot,
       NGX_RTMP_APP_CONF_OFFSET,
@@ -120,17 +120,17 @@ ngx_rtmp_bandwidth_detection_create_app_conf(ngx_conf_t *cf)
         return NULL;
     }
 
-    acf->auto_start_on_connect  = NGX_CONF_UNSET;
-    acf->auto_sense_bw          = NGX_CONF_UNSET;
-    acf->latency_max            = NGX_CONF_UNSET_MSEC;
-    acf->latency_min            = NGX_CONF_UNSET_MSEC;
-    acf->latency_undef          = NGX_CONF_UNSET_MSEC;
-    acf->test_time              = NGX_CONF_UNSET_MSEC;
+    acf->auto_start     = NGX_CONF_UNSET;
+    acf->auto_sense     = NGX_CONF_UNSET;
+    acf->latency_max    = NGX_CONF_UNSET_MSEC;
+    acf->latency_min    = NGX_CONF_UNSET_MSEC;
+    acf->latency_undef  = NGX_CONF_UNSET_MSEC;
+    acf->test_time      = NGX_CONF_UNSET_MSEC;
 
     /* Init payload only once with some random garbage */
     payload = ngx_pcalloc(cf->pool, NGX_RTMP_BANDWIDTH_DETECTION_PAYLOAD_LENGTH + 1);
     for (i=0; i<NGX_RTMP_BANDWIDTH_DETECTION_PAYLOAD_LENGTH; i++) {
-        // make sure it is readable
+        // make sure it is readable and not contain zero
         payload[i] = (ngx_random() % 32) + 32;
     }
 
@@ -144,8 +144,8 @@ ngx_rtmp_bandwidth_detection_merge_app_conf(ngx_conf_t *cf, void *parent, void *
     ngx_rtmp_bandwidth_detection_app_conf_t *prev = parent;
     ngx_rtmp_bandwidth_detection_app_conf_t *conf = child;
 
-    ngx_conf_merge_value(conf->auto_start_on_connect, prev->auto_start_on_connect, 0);
-    ngx_conf_merge_value(conf->auto_sense_bw, prev->auto_sense_bw, 0);
+    ngx_conf_merge_value(conf->auto_start, prev->auto_start, 0);
+    ngx_conf_merge_value(conf->auto_sense, prev->auto_sense, 0);
     ngx_conf_merge_msec_value(conf->latency_max, prev->latency_max, 800);
     ngx_conf_merge_msec_value(conf->latency_min, prev->latency_min, 10);
     ngx_conf_merge_msec_value(conf->latency_undef, prev->latency_undef, 100);
@@ -235,7 +235,7 @@ ngx_rtmp_bandwidth_detection_on_result(ngx_rtmp_session_t *s, ngx_rtmp_header_t 
             "bandwidth_detection: _result: trans='%f' count='%ui'",
             v.trans, v.count);
 
-    if (acf->auto_sense_bw) {
+    if (acf->auto_sense) {
         switch ((ngx_int_t)v.trans) {
             case NGX_RTMP_BANDWIDTH_DETECTION_BWCHECK_TRANS:
                 return ngx_rtmp_bandwidth_detection_check_result(s);
@@ -293,13 +293,19 @@ ngx_rtmp_bandwidth_detection_on_error(ngx_rtmp_session_t *s, ngx_rtmp_header_t *
         return NGX_OK;
     }
 
+    /**
+     * If onBWCheck / onBWDone unsupported - drop activity
+     */
     switch ((ngx_int_t)v.trans) {
         case NGX_RTMP_BANDWIDTH_DETECTION_BWCHECK_TRANS:
+            ngx_log_error(NGX_LOG_WARN, s->connection->log, 0,
+                       "bandwidth_detection: _error - client not support onBWCheck?");
             ctx->active = 0;
             break;
 
         case NGX_RTMP_BANDWIDTH_DETECTION_BWDONE_TRANS:
-            /* Need to test it. Maybe need to set this before send bwDone. */
+            ngx_log_error(NGX_LOG_WARN, s->connection->log, 0,
+                       "bandwidth_detection: _error - client not support onBWDone?");
             ctx->active = 0;
             break;
         default:
@@ -311,6 +317,7 @@ ngx_rtmp_bandwidth_detection_on_error(ngx_rtmp_session_t *s, ngx_rtmp_header_t *
 
 /**
  * Start bandwidth detection here
+ * Long version with multiple onBWCheck calls
  */
 static ngx_int_t
 ngx_rtmp_bandwidth_detection_start(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h, ngx_chain_t *in)
@@ -381,7 +388,7 @@ ngx_rtmp_bandwidth_detection_start(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h, 
 
 
 /**
- * FAST multicall bandwidth detection here
+ * FAST bandwidth detection here
  */
 static ngx_int_t
 ngx_rtmp_bandwidth_detection_fast(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h, ngx_chain_t *in)
@@ -430,23 +437,24 @@ ngx_rtmp_bandwidth_detection_fast(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h, n
 
         ngx_rtmp_set_ctx(s, bw_ctx, ngx_rtmp_bandwidth_detection_module);
         ngx_memzero(bw_ctx, sizeof(*bw_ctx));
-
-        bw_ctx->bw_begin_time = ngx_cached_time->msec;
-        bw_ctx->bw_begin_time2 = 0;
-        bw_ctx->latency = acf->latency_min;
-        bw_ctx->bytes_out2 = s->out_bytes;
     }
 
     // To prevent in _result call
     bw_ctx->active = 0;
+    bw_ctx->bw_begin_time = ngx_cached_time->msec;
+    bw_ctx->bw_begin_time2 = 0;
+    bw_ctx->latency = acf->latency_min;
+    bw_ctx->bytes_out2 = s->out_bytes;
+
+    ngx_rtmp_send_bwcheck(s, NULL, 0);
 
     // Do some load for next call
-    snd_cnt = 5;
-    while (snd_cnt) {
+    snd_cnt = 0;
+    while (snd_cnt<5) {
         if (NGX_OK != ngx_rtmp_send_bwcheck(s, payload, NGX_RTMP_BANDWIDTH_DETECTION_PAYLOAD_LENGTH)) {
             break;
         }
-        snd_cnt--;
+        snd_cnt++;
     }
 
     /* Emulate accumulation between calls */
@@ -455,18 +463,18 @@ ngx_rtmp_bandwidth_detection_fast(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h, n
     bw_ctx->bytes_out = bw_ctx->bytes_out2;
     bw_ctx->bytes_out2 = s->out_bytes;
 
+    timePassed = (bw_ctx->bw_begin_time2 - bw_ctx->bw_begin_time) / snd_cnt;
+
+    bw_ctx->latency = ngx_min(timePassed, acf->latency_max);
+    bw_ctx->latency = ngx_max(bw_ctx->latency, acf->latency_min);
+
     deltaDown = (bw_ctx->bytes_out2 - bw_ctx->bytes_out) *8/1000.;
-    deltaTime = ( (bw_ctx->bw_begin_time2 - bw_ctx->bw_begin_time) - (bw_ctx->latency))/1000.;
+    deltaTime = ( (bw_ctx->bw_begin_time2 - bw_ctx->bw_begin_time) - (bw_ctx->latency*snd_cnt))/1000.;
 
     if (deltaTime <= 0) deltaTime = (bw_ctx->bw_begin_time2 - bw_ctx->bw_begin_time)/1000.;
     if (deltaTime <= 0) deltaTime = 1.;
 
     kbitDown = deltaDown/deltaTime;
-
-    timePassed = bw_ctx->bw_begin_time2 - bw_ctx->bw_begin_time;
-
-    bw_ctx->latency = ngx_min(timePassed, acf->latency_max);
-    bw_ctx->latency = ngx_max(bw_ctx->latency, acf->latency_min);
 
     ngx_log_debug0(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
                    "bandwidth_detection: fast - check done!");
@@ -493,7 +501,7 @@ ngx_rtmp_bandwidth_detection_wrapper(ngx_rtmp_session_t *s, ngx_rtmp_header_t *h
         return NGX_ERROR;
     }
 
-    if (acf->auto_sense_bw) {
+    if (acf->auto_sense) {
         return ngx_rtmp_bandwidth_detection_start(s, h, in);
     } else {
         return ngx_rtmp_bandwidth_detection_fast(s, h, in);
@@ -578,7 +586,6 @@ ngx_rtmp_bandwidth_detection_clientcheck(ngx_rtmp_session_t *s, ngx_rtmp_header_
             "bandwidth_detection: bwcheck: trans='%f' time='%ui'",
             v.trans, v.time);
 
-    // Send first packet with empty payload - for latency calculation
     return ngx_rtmp_send_onclientbwcheck(s, v.trans, s->out_bytes, s->in_bytes, v.time);
 }
 
@@ -703,7 +710,7 @@ ngx_rtmp_bandwidth_detection_connect(ngx_rtmp_session_t *s, ngx_rtmp_connect_t *
             return NGX_ERROR;
         }
 
-        if (acf->auto_start_on_connect) {
+        if (acf->auto_start) {
             result = ngx_rtmp_bandwidth_detection_wrapper(s, NULL, NULL);
         }
     }

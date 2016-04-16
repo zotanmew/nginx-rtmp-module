@@ -35,9 +35,9 @@ struct ngx_rtmp_bandwidth_detection_ctx_s {
 };
 
 typedef struct {
-    ngx_flag_t                          auto_start_on_connect;  // Start bandwidth check on every connection
+    ngx_flag_t                          auto_start;             // Start bandwidth check on every connection
                                                                 // without client call
-    ngx_flag_t                          auto_sense_bw;          // Do multiple calls onBWCheck, and onBWDone
+    ngx_flag_t                          auto_sense;             // Do multiple calls onBWCheck, and onBWDone
                                                                 // Or just fast onBWDone
     ngx_msec_t                          latency_min;            // Minimal detectable latency, msec
     ngx_msec_t                          latency_max;            // Maximum latency assumed, msec
