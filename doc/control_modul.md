@@ -90,5 +90,40 @@ http://server.com/control/redirect/publisher|subscriber|client?
 srv=SRV&app=APP&name=NAME&addr=ADDR&clientid=CLIENTID&newname=NEWNAME
 ```
 
-* srv, app, name, addr, clients - the same as above
+* srv, app, name, addr, clientid - the same as above
 * newname - new stream name to redirect to
+
+# Push
+Push publishing stream to the other location - local or remote server.
+Syntax:
+```sh
+http://server.com/control/push/?
+srv=SRV&app=APP&name=NAME&addr=ADDR&clientid=CLIENTID&location=NEWLOCATION
+```
+
+* srv=SRV - optional server{} block number within rtmp{} block, default to first server{} block
+* app=APP - required application name
+* name=NAME - required stream name
+* addr - optional client address (the same as returned by rtmp_stat)
+* clientid - optional nginx client id (displayed in log and stat) 
+* location - new stream location to push-publish to:
+  * `/app/newstream` for local
+  * `host[:port]/app/newstream` for remote, default port - 1935
+
+# Pull
+Pull stream to the other location - local or remote server.
+Syntax:
+```sh
+http://server.com/control/pull/?
+srv=SRV&app=APP&name=NAME&addr=ADDR&clientid=CLIENTID&location=NEWLOCATION&newname=NEWNAME
+```
+
+* srv=SRV - optional server{} block number within rtmp{} block, default to first server{} block
+* app=APP - required application name
+* name=NAME - optional stream name
+* addr - optional client address (the same as returned by rtmp_stat)
+* clientid - optional nginx client id (displayed in log and stat) 
+* location - stream location to pull-play from:
+  * `/app/newstream` for local
+  * `host[:port]/app/newstream` for remote, default port - 1935
+* newname - new stream name to pull into
