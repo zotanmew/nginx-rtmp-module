@@ -111,14 +111,6 @@ static ngx_command_t  ngx_rtmp_record_commands[] = {
       offsetof(ngx_rtmp_record_app_conf_t, lock_file),
       NULL },
 
-    { ngx_string("record_interval_size"),
-      NGX_RTMP_MAIN_CONF|NGX_RTMP_SRV_CONF|NGX_RTMP_APP_CONF|
-                        NGX_RTMP_REC_CONF|NGX_CONF_TAKE1,
-      ngx_conf_set_size_slot,
-      NGX_RTMP_APP_CONF_OFFSET,
-      offsetof(ngx_rtmp_record_app_conf_t, interval_size),
-      NULL },
-
     { ngx_string("record_max_size"),
       NGX_RTMP_MAIN_CONF|NGX_RTMP_SRV_CONF|NGX_RTMP_APP_CONF|
                          NGX_RTMP_REC_CONF|NGX_CONF_TAKE1,
@@ -203,7 +195,6 @@ ngx_rtmp_record_create_app_conf(ngx_conf_t *cf)
     }
 
     racf->max_size = NGX_CONF_UNSET_SIZE;
-    racf->interval_size = NGX_CONF_UNSET_SIZE;
     racf->max_frames = NGX_CONF_UNSET_SIZE;
     racf->interval = NGX_CONF_UNSET_MSEC;
     racf->unique = NGX_CONF_UNSET;
@@ -230,7 +221,6 @@ ngx_rtmp_record_merge_app_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_conf_merge_str_value(conf->path, prev->path, "");
     ngx_conf_merge_str_value(conf->suffix, prev->suffix, ".flv");
     ngx_conf_merge_size_value(conf->max_size, prev->max_size, 0);
-    ngx_conf_merge_size_value(conf->interval_size, prev->interval_size, 0);
     ngx_conf_merge_size_value(conf->max_frames, prev->max_frames, 0);
     ngx_conf_merge_value(conf->unique, prev->unique, 0);
     ngx_conf_merge_value(conf->append, prev->append, 0);
@@ -681,6 +671,8 @@ ngx_rtmp_record_start(ngx_rtmp_session_t *s)
         if (rctx->conf->flags & (NGX_RTMP_RECORD_OFF|NGX_RTMP_RECORD_MANUAL)) {
             continue;
         }
+        // Drop flag, may be all fixed now
+        rctx->failed = 0;
         ngx_rtmp_record_node_open(s, rctx);
     }
 }
@@ -891,9 +883,10 @@ ngx_rtmp_record_write_frame(ngx_rtmp_session_t *s,
                             ngx_rtmp_header_t *h, ngx_chain_t *in,
                             ngx_int_t inc_nframes)
 {
-    u_char                      hdr[11], *p, *ph;
+    u_char                      hdr[11], *p, *ph, make_new_node=0;
     uint32_t                    timestamp, tag_size;
     ngx_rtmp_record_app_conf_t *rracf;
+    uint64_t                    now_t, next_t;
 
     rracf = rctx->conf;
 
@@ -908,8 +901,7 @@ ngx_rtmp_record_write_frame(ngx_rtmp_session_t *s,
         rctx->audio = 1;
     }
 
-    if (rctx->record_started == 0)
-    {
+    if (rctx->record_started == 0) {
         rctx->record_started = 1;
 
         ngx_rtmp_record_started_t       v;
@@ -1001,13 +993,31 @@ ngx_rtmp_record_write_frame(ngx_rtmp_session_t *s,
 
     rctx->nframes += inc_nframes;
 
+
+    /* Check for sizes, intervals - to make record split */
+    make_new_node = 0;
+
     /* watch max size */
     if ((rracf->max_size && rctx->file.offset >= (ngx_int_t) rracf->max_size) ||
         (rracf->max_frames && rctx->nframes >= rracf->max_frames))
     {
-        ngx_rtmp_record_node_close(s, rctx);
+        make_new_node = 1;
+    }
+    /* TODO: May be not the best way to calculate recorded fragment length */
+    if (rracf->interval != NGX_CONF_UNSET_MSEC) {
+        // record interval should work if set, manual mode or not
+        now_t = ngx_cached_time->sec * 1000 + ngx_cached_time->msec;
+        next_t = rctx->last->sec * 1000 + rctx->last->msec + rracf->interval;
+
+        if (now_t >= next_t) {
+            make_new_node = 1;
+        }
     }
 
+    if (make_new_node) {
+        ngx_rtmp_record_node_close(s, rctx);
+        ngx_rtmp_record_node_open(s, rctx);
+    }
     return NGX_OK;
 }
 
@@ -1053,7 +1063,6 @@ static ngx_int_t
 ngx_rtmp_record_node_avd(ngx_rtmp_session_t *s, ngx_rtmp_record_rec_ctx_t *rctx,
                         ngx_rtmp_header_t *h, ngx_chain_t *in)
 {
-    ngx_time_t                      next;
     ngx_rtmp_header_t               ch;
     ngx_rtmp_codec_ctx_t           *codec_ctx;
     ngx_int_t                       keyframe, brkframe;
@@ -1080,10 +1089,6 @@ ngx_rtmp_record_node_avd(ngx_rtmp_session_t *s, ngx_rtmp_record_rec_ctx_t *rctx,
         return NGX_OK;
     }
 
-    /*if (rctx->file.fd == NGX_INVALID_FILE) {
-        return NGX_OK;
-    }*/
-
     if (h->type == NGX_RTMP_MSG_AUDIO &&
        (rracf->flags & NGX_RTMP_RECORD_AUDIO) == 0)
     {
@@ -1103,25 +1108,19 @@ ngx_rtmp_record_node_avd(ngx_rtmp_session_t *s, ngx_rtmp_record_rec_ctx_t *rctx,
         return NGX_OK;
     }
 
-    if (rracf->interval != NGX_CONF_UNSET_MSEC)
-    {
-	// record interval should work if set, manual mode or not
-        next = rctx->last;
-        next.msec += rracf->interval;
-        next.sec  += (next.msec / 1000);
-        next.msec %= 1000;
-
-        if (ngx_cached_time->sec  > next.sec ||
-           (ngx_cached_time->sec == next.sec &&
-           ngx_cached_time->msec > next.msec))
-            {
-		ngx_rtmp_record_node_close(s, rctx);
-                ngx_rtmp_record_node_open(s, rctx);
-            }
-    }
-    else if (!rctx->failed)
-    {
+    if (!rctx->failed) {
+        // Not fail if opened, not reopen, just skip
         ngx_rtmp_record_node_open(s, rctx);
+    }
+
+    /**
+     * Something wrong happened
+     * File must be opened here already
+     */
+    if (rctx->file.fd == NGX_INVALID_FILE) {
+        ngx_log_debug0(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
+                       "record: File can't be opened? record_node_avd exit.");
+        return NGX_ERROR;
     }
 
     if (!rctx->initialized) {
