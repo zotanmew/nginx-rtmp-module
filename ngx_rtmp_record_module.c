@@ -1007,7 +1007,7 @@ ngx_rtmp_record_write_frame(ngx_rtmp_session_t *s,
     if (rracf->interval != NGX_CONF_UNSET_MSEC) {
         // record interval should work if set, manual mode or not
         now_t = ngx_cached_time->sec * 1000 + ngx_cached_time->msec;
-        next_t = rctx->last->sec * 1000 + rctx->last->msec + rracf->interval;
+        next_t = rctx->last.sec * 1000 + rctx->last.msec + rracf->interval;
 
         if (now_t >= next_t) {
             make_new_node = 1;
