@@ -1192,7 +1192,7 @@ ngx_rtmp_notify_connect_handle(ngx_rtmp_session_t *s,
     ngx_rtmp_notify_srv_conf_t *nscf;
     u_char              app[NGX_RTMP_MAX_NAME];
 
-    static ngx_str_t    location = ngx_string("location");
+    static ngx_str_t    location = ngx_string("x-rtmp-target");
 
     rc = ngx_rtmp_notify_parse_http_retcode(s, in);
 
@@ -1296,35 +1296,20 @@ next:
 }
 
 
-static void
-ngx_rtmp_notify_set_name(u_char *dst, size_t dst_len, u_char *src,
-    size_t src_len)
-{
-    u_char     result[16], *p;
-    ngx_md5_t  md5;
-
-    ngx_md5_init(&md5);
-    ngx_md5_update(&md5, src, src_len);
-    ngx_md5_final(result, &md5);
-
-    p = ngx_hex_dump(dst, result, ngx_min((dst_len - 1) / 2, 16));
-    *p = '\0';
-}
-
-
 static ngx_int_t
 ngx_rtmp_notify_publish_handle(ngx_rtmp_session_t *s,
         void *arg, ngx_chain_t *in)
 {
     ngx_rtmp_publish_t         *v = arg;
-    ngx_int_t                   rc, send;
+    ngx_int_t                   rc, len_restream, len_user, send;
     ngx_str_t                   local_name;
     ngx_rtmp_relay_target_t     target;
     ngx_url_t                  *u;
-    ngx_rtmp_notify_app_conf_t *nacf;
-    u_char                      name[NGX_RTMP_MAX_NAME];
+    u_char                      restream[NGX_RTMP_MAX_NAME];
+    u_char                      user[NGX_RTMP_MAX_NAME];
 
-    static ngx_str_t    location = ngx_string("location");
+    static ngx_str_t    header_restream = ngx_string("x-rtmp-target");
+    static ngx_str_t    header_user     = ngx_string("x-rtmp-user");
 
     rc = ngx_rtmp_notify_parse_http_retcode(s, in);
 
@@ -1364,77 +1349,21 @@ ngx_rtmp_notify_publish_handle(ngx_rtmp_session_t *s,
     ngx_log_error(NGX_LOG_INFO, s->connection->log, 0,
                    "notify: publish redirect received");
 
-    rc = ngx_rtmp_notify_parse_http_header(s, in, &location, name,
-                                           sizeof(name) - 1);
-    if (rc <= 0) {
+    len_user = ngx_rtmp_notify_parse_http_header(s, in, &header_user, user, sizeof(user) - 1);
+    if (len_user <= 0) {
         goto next;
     }
 
-    if (ngx_strncasecmp(name, (u_char *) "rtmp://", 7)) {
-        *ngx_cpymem(v->name, name, rc) = 0;
-        ngx_log_error(NGX_LOG_INFO, s->connection->log, 0,
-                      "notify: publish redirect to '%s'", v->name);
-        goto next;
-    }
+    *ngx_cpymem(&v->name, &user, len_user) = 0;
 
-    /* push */
-
-    nacf = ngx_rtmp_get_module_app_conf(s, ngx_rtmp_notify_module);
-
-    if (nacf->send_redirect) {
-        // Send 302 redirect and go next
-
-        ngx_log_error(NGX_LOG_INFO, s->connection->log, 0,
-                  "notify: publish send 302 redirect");
-        ngx_log_error(NGX_LOG_INFO, s->connection->log, 0,
-                  "notify: -- for stream '%s' to new location '%*s'", v->name, rc, name);
-
-        local_name.data = ngx_palloc(s->connection->pool, rc+1);
-        local_name.len = rc;
-        *ngx_cpymem(local_name.data, name, rc) = 0;
-
-        /* MAGICK HERE */
-
-        if (!ngx_strncasecmp(s->flashver.data, (u_char *) "FMLE/", 5)) {
-            // Official method, by FMS SDK
-            send = ngx_rtmp_send_redirect_status(s, "onStatus", "Connect here", local_name);
-            send &= ngx_rtmp_send_redirect_status(s, "netStatus", "Connect here", local_name);
-
-            ngx_log_error(NGX_LOG_INFO, s->connection->log, 0,
-                      "notify: publish send(o) status = '%ui'", send == NGX_OK);
-        } else {
-
-            // Something by rtmpdump lib
-            send = ngx_rtmp_send_redirect_status(s, "_error", "Connect here", local_name);
-
-            ngx_log_error(NGX_LOG_INFO, s->connection->log, 0,
-                      "notify: publish send(e) status = '%ui'", send == NGX_OK);
-        }
-
-        ngx_pfree(s->connection->pool, local_name.data);
-
-        ngx_rtmp_notify_clear_flag(s, NGX_RTMP_NOTIFY_PUBLISHING);
-
-        // Something by rtmpdump lib
-        send = ngx_rtmp_send_close_method(s, "close");
-        ngx_log_error(NGX_LOG_INFO, s->connection->log, 0,
-            "notify: publish send(e) close method = '%ui'", send == NGX_OK);
-
-        return send;
-
-    } else if (nacf->relay_redirect) {
-        // Relay local streams, change name
-
-        ngx_rtmp_notify_set_name(v->name, NGX_RTMP_MAX_NAME, name, (size_t) rc);
-    }
-
-    ngx_log_error(NGX_LOG_INFO, s->connection->log, 0,
-                  "notify: push '%s' to '%*s'", v->name, rc, name);
+    ngx_log_error(NGX_LOG_INFO, s->connection->log, 0, "notify: publish redirect to '%s'", v->name);
 
     local_name.data = v->name;
     local_name.len = ngx_strlen(v->name);
 
-    u_char *start = name;
+    len_restream = ngx_rtmp_notify_parse_http_header(s, in, &header_restream, restream, sizeof(restream) - 1);
+
+    u_char *start = restream;
     u_char *next;
 
     while (start != NULL) {
@@ -1450,16 +1379,15 @@ ngx_rtmp_notify_publish_handle(ngx_rtmp_session_t *s,
             start = next + 1;
         } else {
             u->url.data = start + 7;
-            u->url.len = rc - (start - name) - 7;
+            u->url.len = len_restream - (start - restream) - 7;
             start = NULL;
         }
 
-
         u->default_port = 1935;
         u->uri_part = 1;
-        u->no_resolve = 1; /* want ip here */
+        u->no_resolve = 0;
 
-        ngx_log_error(NGX_LOG_ERR, s->connection->log, 0,
+        ngx_log_error(NGX_LOG_INFO, s->connection->log, 0,
               "notify: processing push '%V'", &u->url);
 
         if (ngx_parse_url(s->connection->pool, u) != NGX_OK) {
@@ -1538,6 +1466,7 @@ ngx_rtmp_notify_play_handle(ngx_rtmp_session_t *s,
         goto next;
     }
 
+
     if (ngx_strncasecmp(name, (u_char *) "rtmp://", 7)) {
         *ngx_cpymem(v->name, name, rc) = 0;
         ngx_log_error(NGX_LOG_INFO, s->connection->log, 0,
@@ -1592,7 +1521,7 @@ ngx_rtmp_notify_play_handle(ngx_rtmp_session_t *s,
     } else if (nacf->relay_redirect) {
         // Relay local streams, change name
 
-        ngx_rtmp_notify_set_name(v->name, NGX_RTMP_MAX_NAME, name, (size_t) rc);
+        *ngx_cpymem(&v->name, &name, NGX_RTMP_MAX_NAME) = 0;
     }
 
     ngx_log_error(NGX_LOG_INFO, s->connection->log, 0,

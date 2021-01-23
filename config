@@ -15,11 +15,11 @@ RTMP_CORE_MODULES="                                         \
                 ngx_rtmp_exec_module                        \
                 ngx_rtmp_auto_push_module                   \
                 ngx_rtmp_auto_push_index_module             \
-                ngx_rtmp_notify_module                      \
                 ngx_rtmp_log_module                         \
                 ngx_rtmp_limit_module                       \
                 ngx_rtmp_hls_module                         \
                 ngx_rtmp_dash_module                        \
+                ngx_rtmp_notify_module                      \
                 "
 RTMP_HTTP_MODULES="                                         \
                 ngx_rtmp_stat_module                        \
@@ -68,7 +68,6 @@ RTMP_CORE_SRCS="                                            \
                 $ngx_addon_dir/ngx_rtmp_bandwidth.c         \
                 $ngx_addon_dir/ngx_rtmp_exec_module.c       \
                 $ngx_addon_dir/ngx_rtmp_auto_push_module.c  \
-                $ngx_addon_dir/ngx_rtmp_notify_module.c     \
                 $ngx_addon_dir/ngx_rtmp_log_module.c        \
                 $ngx_addon_dir/ngx_rtmp_limit_module.c      \
                 $ngx_addon_dir/ngx_rtmp_bitop.c             \
@@ -78,6 +77,7 @@ RTMP_CORE_SRCS="                                            \
                 $ngx_addon_dir/hls/ngx_rtmp_mpegts.c        \
                 $ngx_addon_dir/hls/ngx_rtmp_mpegts_crc.c    \
                 $ngx_addon_dir/dash/ngx_rtmp_mp4.c          \
+                $ngx_addon_dir/ngx_rtmp_notify_module.c     \
                 "
 RTMP_HTTP_SRCS="                                            \
                 $ngx_addon_dir/ngx_rtmp_stat_module.c       \
