@@ -1362,6 +1362,9 @@ ngx_rtmp_notify_publish_handle(ngx_rtmp_session_t *s,
     local_name.len = ngx_strlen(v->name);
 
     len_restream = ngx_rtmp_notify_parse_http_header(s, in, &header_restream, restream, sizeof(restream) - 1);
+    if (len_restream <= 0) {
+        goto next;
+    }
 
     u_char *start = restream;
     u_char *next;
