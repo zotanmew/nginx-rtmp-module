@@ -713,6 +713,200 @@ write_err:
     return NGX_ERROR;
 }
 
+static ngx_int_t
+ngx_rtmp_hls_write_final_playlist(ngx_rtmp_session_t *s)
+{
+    static u_char                   buffer[1024];
+    ngx_fd_t                        fd;
+    u_char                         *p, *end;
+    ngx_rtmp_hls_ctx_t             *ctx;
+    ssize_t                         n;
+    ngx_rtmp_hls_app_conf_t        *hacf;
+    ngx_rtmp_hls_frag_t            *f;
+    ngx_int_t                      i, start_i;
+    ngx_uint_t                      max_frag;
+    double                          fragments_length;
+    ngx_str_t                       name_part, key_name_part;
+    uint64_t                        prev_key_id;
+    const char                     *sep, *key_sep;
+
+    ngx_rtmp_playlist_t             v;
+
+    ngx_log_error(NGX_LOG_DEBUG, s->connection->log, 0,
+                  "hls: write playlist");
+
+    hacf = ngx_rtmp_get_module_app_conf(s, ngx_rtmp_hls_module);
+    ctx = ngx_rtmp_get_module_ctx(s, ngx_rtmp_hls_module);
+
+    fd = ngx_open_file(ctx->playlist_bak.data, NGX_FILE_WRONLY,
+                       NGX_FILE_TRUNCATE, NGX_FILE_DEFAULT_ACCESS);
+
+    if (fd == NGX_INVALID_FILE) {
+        ngx_log_error(NGX_LOG_ERR, s->connection->log, ngx_errno,
+                      "hls: " ngx_open_file_n " failed: '%V'",
+                      &ctx->playlist_bak);
+        return NGX_ERROR;
+    }
+
+    max_frag = hacf->fraglen / 1000;
+
+    /**
+     * Need to check fragments length sum and playlist max length
+     * Do backward search
+     */
+    start_i = 0;
+    fragments_length = 0.;
+    for (i = ctx->nfrags-1; i >= 0; i--) {
+        f = ngx_rtmp_hls_get_frag(s, i);
+        if (f->duration) {
+            fragments_length += f->duration;
+        }
+        /**
+         * Think that sum of frag length is more than playlist desired length - half minimal frag length
+         * XXX: sometimes sum of frag lengths are almost playlist length
+         *      but key-frames come at random rate...
+         */
+        if (fragments_length >= hacf->playlen/1000. - max_frag/2) {
+            start_i = i;
+            break;
+        }
+    }
+
+    ngx_log_debug1(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
+                   "hls: found starting fragment=%i", start_i);
+
+    for (i = start_i; i < (ngx_int_t) ctx->nfrags; i++) {
+        f = ngx_rtmp_hls_get_frag(s, i);
+        if (f->duration > max_frag) {
+            max_frag = (ngx_uint_t) (f->duration + .5);
+        }
+    }
+
+    p = buffer;
+    end = p + sizeof(buffer);
+
+    p = ngx_slprintf(p, end,
+                     "#EXTM3U\n"
+                     "#EXT-X-VERSION:3\n"
+                     "#EXT-X-MEDIA-SEQUENCE:%uL\n"
+                     "#EXT-X-TARGETDURATION:%ui\n",
+                     ctx->mediaseq++, max_frag);
+
+    if (hacf->type == NGX_RTMP_HLS_TYPE_EVENT) {
+        p = ngx_slprintf(p, end, "#EXT-X-PLAYLIST-TYPE:EVENT\n");
+    }
+
+    if (hacf->allow_client_cache == NGX_RTMP_HLS_CACHE_ENABLED) {
+        p = ngx_slprintf(p, end, "#EXT-X-ALLOW-CACHE:YES\n");
+    } else if (hacf->allow_client_cache == NGX_RTMP_HLS_CACHE_DISABLED) {
+        p = ngx_slprintf(p, end, "#EXT-X-ALLOW-CACHE:NO\n");
+    }
+
+    n = ngx_write_fd(fd, buffer, p - buffer);
+    if (n < 0) {
+        goto write_err;
+    }
+
+    sep = hacf->nested ? (hacf->base_url.len ? "/" : "") : "-";
+    key_sep = hacf->nested ? (hacf->key_url.len ? "/" : "") : "-";
+
+    name_part.len = 0;
+    if (!hacf->nested || hacf->base_url.len) {
+        name_part = ctx->name;
+    }
+
+    key_name_part.len = 0;
+    if (!hacf->nested || hacf->key_url.len) {
+        key_name_part = ctx->name;
+    }
+
+    prev_key_id = 0;
+
+    for (i = start_i; i < (ngx_int_t) ctx->nfrags; i++) {
+        f = ngx_rtmp_hls_get_frag(s, i);
+        if ((i == 0 || f->discont) && f->datetime && f->datetime->len > 0) {
+            p = ngx_snprintf(buffer, sizeof(buffer), "#EXT-X-PROGRAM-DATE-TIME:");
+            n = ngx_write_fd(fd, buffer, p - buffer);
+            if (n < 0) {
+                goto write_err;
+            }
+            n = ngx_write_fd(fd, f->datetime->data, f->datetime->len);
+            if (n < 0) {
+                goto write_err;
+            }
+            n = ngx_write_fd(fd, "\n", 1);
+            if (n < 0) {
+                goto write_err;
+            }
+        }
+
+        p = buffer;
+        end = p + sizeof(buffer);
+
+        if (f->discont) {
+            p = ngx_slprintf(p, end, "#EXT-X-DISCONTINUITY\n");
+        }
+
+        if (hacf->keys && (i == 0 || f->key_id != prev_key_id)) {
+            p = ngx_slprintf(p, end, "#EXT-X-KEY:METHOD=AES-128,"
+                             "URI=\"%V%V%s%uL.key\",IV=0x%032XL\n",
+                             &hacf->key_url, &key_name_part,
+                             key_sep, f->key_id, f->key_id);
+        }
+
+        prev_key_id = f->key_id;
+
+        p = ngx_slprintf(p, end,
+                         "#EXTINF:%.3f,\n"
+                         "%V%V%s%uL.ts\n",
+                         f->duration, &hacf->base_url, &name_part, sep, f->id);
+
+        ngx_log_debug5(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
+                       "hls: fragment frag=%uL, n=%ui/%ui, duration=%.3f, "
+                       "discont=%i",
+                       ctx->frag, i + 1, ctx->nfrags, f->duration, (ngx_int_t)f->discont);
+
+        n = ngx_write_fd(fd, buffer, p - buffer);
+        if (n < 0) {
+            goto write_err;
+        }
+    }
+
+    p = ngx_slprintf(p, end, "#EXT-X-ENDLIST\n");
+    n = ngx_write_fd(fd, buffer, p - buffer);
+    if (n < 0) {
+        goto write_err;
+    }
+
+    ngx_close_file(fd);
+
+    if (ngx_rtmp_hls_rename_file(ctx->playlist_bak.data, ctx->playlist.data)
+        == NGX_FILE_ERROR)
+    {
+        ngx_log_error(NGX_LOG_ERR, s->connection->log, ngx_errno,
+                      "hls: rename failed: '%V'->'%V'",
+                      &ctx->playlist_bak, &ctx->playlist);
+        return NGX_ERROR;
+    }
+
+    if (ctx->var) {
+        return ngx_rtmp_hls_write_variant_playlist(s);
+    }
+
+    ngx_memzero(&v, sizeof(v));
+    ngx_str_set(&(v.module), "hls");
+    v.playlist.data = ctx->playlist.data;
+    v.playlist.len = ctx->playlist.len;
+    return next_playlist(s, &v);
+
+write_err:
+    ngx_log_error(NGX_LOG_ERR, s->connection->log, ngx_errno,
+                    "hls: " ngx_write_fd_n " failed '%V'",
+                    &ctx->playlist_bak);
+    ngx_close_file(fd);
+    return NGX_ERROR;
+}
+
 
 static ngx_int_t
 ngx_rtmp_hls_copy(ngx_rtmp_session_t *s, void *dst, u_char **src, size_t n,
@@ -987,6 +1181,29 @@ ngx_rtmp_hls_close_fragment(ngx_rtmp_session_t *s)
     return NGX_OK;
 }
 
+static ngx_int_t
+ngx_rtmp_hls_close_final_fragment(ngx_rtmp_session_t *s)
+{
+    ngx_rtmp_hls_ctx_t         *ctx;
+
+    ctx = ngx_rtmp_get_module_ctx(s, ngx_rtmp_hls_module);
+    if (ctx == NULL || !ctx->opened) {
+        return NGX_OK;
+    }
+
+    ngx_log_debug1(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
+                   "hls: close fragment n=%uL", ctx->frag);
+
+    ngx_rtmp_mpegts_close_file(&ctx->file);
+
+    ctx->opened = 0;
+
+    ngx_rtmp_hls_next_frag(s);
+
+    ngx_rtmp_hls_write_final_playlist(s);
+
+    return NGX_OK;
+}
 
 static ngx_int_t
 ngx_rtmp_hls_open_fragment(ngx_rtmp_session_t *s, uint64_t ts,
@@ -1648,7 +1865,7 @@ ngx_rtmp_hls_close_stream(ngx_rtmp_session_t *s, ngx_rtmp_close_stream_t *v)
     ngx_log_debug0(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
                    "hls: close stream");
 
-    ngx_rtmp_hls_close_fragment(s);
+    ngx_rtmp_hls_close_final_fragment(s);
 
 next:
     return next_close_stream(s, v);
