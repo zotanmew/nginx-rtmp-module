@@ -73,6 +73,7 @@ typedef struct {
     uint64_t                            key_id;
     ngx_uint_t                          nfrags;
     ngx_rtmp_hls_frag_t                *frags; /* circular 2 * winfrags + 1 */
+    uint64_t                            mediaseq;
 
     ngx_uint_t                          audio_cc;
     ngx_uint_t                          video_cc;
@@ -300,7 +301,7 @@ static ngx_command_t ngx_rtmp_hls_commands[] = {
       ngx_conf_set_enum_slot,
       NGX_RTMP_APP_CONF_OFFSET,
       offsetof(ngx_rtmp_hls_app_conf_t, allow_client_cache),
-      &ngx_rtmp_hls_cache },       
+      &ngx_rtmp_hls_cache },
 
     { ngx_string("hls_variant"),
       NGX_RTMP_MAIN_CONF|NGX_RTMP_SRV_CONF|NGX_RTMP_APP_CONF|NGX_CONF_1MORE,
@@ -529,7 +530,7 @@ ngx_rtmp_hls_write_variant_playlist(ngx_rtmp_session_t *s)
 
 
 static ngx_int_t
-ngx_rtmp_hls_write_playlist(ngx_rtmp_session_t *s)
+ngx_rtmp_hls_write_playlist(ngx_rtmp_session_t *s, int final)
 {
     static u_char                   buffer[1024];
     ngx_fd_t                        fd;
@@ -605,7 +606,7 @@ ngx_rtmp_hls_write_playlist(ngx_rtmp_session_t *s)
                      "#EXT-X-VERSION:3\n"
                      "#EXT-X-MEDIA-SEQUENCE:%uL\n"
                      "#EXT-X-TARGETDURATION:%ui\n",
-                     ctx->frag, max_frag);
+                     ctx->mediaseq++, max_frag);
 
     if (hacf->type == NGX_RTMP_HLS_TYPE_EVENT) {
         p = ngx_slprintf(p, end, "#EXT-X-PLAYLIST-TYPE:EVENT\n");
@@ -638,6 +639,7 @@ ngx_rtmp_hls_write_playlist(ngx_rtmp_session_t *s)
     prev_key_id = 0;
 
     for (i = start_i; i < (ngx_int_t)ctx->nfrags; i++) {
+    for (i = start_i; i < (ngx_int_t) ctx->nfrags; i++) {
         f = ngx_rtmp_hls_get_frag(s, i);
         if ((i == 0 || f->discont) && f->datetime && f->datetime->len > 0) {
             p = ngx_snprintf(buffer, sizeof(buffer), "#EXT-X-PROGRAM-DATE-TIME:");
@@ -681,6 +683,15 @@ ngx_rtmp_hls_write_playlist(ngx_rtmp_session_t *s)
                        "discont=%i",
                        ctx->frag, i + 1, ctx->nfrags, f->duration, (ngx_int_t)f->discont);
 
+        n = ngx_write_fd(fd, buffer, p - buffer);
+        if (n < 0) {
+            goto write_err;
+        }
+    }
+
+    if (final)
+    {
+        p = ngx_slprintf(p, end, "#EXT-X-ENDLIST\n");
         n = ngx_write_fd(fd, buffer, p - buffer);
         if (n < 0) {
             goto write_err;
@@ -967,7 +978,7 @@ ngx_rtmp_hls_get_fragment_datetime(ngx_rtmp_session_t *s, uint64_t ts)
 
 
 static ngx_int_t
-ngx_rtmp_hls_close_fragment(ngx_rtmp_session_t *s)
+ngx_rtmp_hls_close_final_fragment(ngx_rtmp_session_t *s, int final)
 {
     ngx_rtmp_hls_ctx_t         *ctx;
 
@@ -985,9 +996,16 @@ ngx_rtmp_hls_close_fragment(ngx_rtmp_session_t *s)
 
     ngx_rtmp_hls_next_frag(s);
 
-    ngx_rtmp_hls_write_playlist(s);
+    ngx_rtmp_hls_write_playlist(s, final);
 
     return NGX_OK;
+}
+
+
+static ngx_int_t
+ngx_rtmp_hls_close_fragment(ngx_rtmp_session_t *s)
+{
+    return ngx_rtmp_hls_close_final_fragment(s, 0);
 }
 
 
@@ -1451,7 +1469,7 @@ ngx_rtmp_hls_publish(ngx_rtmp_session_t *s, ngx_rtmp_publish_t *v)
         goto next;
     }
 
-    ngx_log_debug2(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
+    ngx_log_error(NGX_LOG_INFO, s->connection->log, 0,
                    "hls: publish: name='%s' type='%s'",
                    v->name, v->type);
 
@@ -1651,7 +1669,7 @@ ngx_rtmp_hls_close_stream(ngx_rtmp_session_t *s, ngx_rtmp_close_stream_t *v)
     ngx_log_debug0(NGX_LOG_DEBUG_RTMP, s->connection->log, 0,
                    "hls: close stream");
 
-    ngx_rtmp_hls_close_fragment(s);
+    ngx_rtmp_hls_close_final_fragment(s, 1);
 
 next:
     return next_close_stream(s, v);
